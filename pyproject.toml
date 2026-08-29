@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rift"
+version = "0.1.0"
+description = "RIFT: Robust Image Forgery Tracer for AIGC detection under real-world transforms"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "TikTok TechJam 2026 Team" }]
+dependencies = [
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "timm>=1.0.0",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pillow>=10.0",
+  "pyyaml>=6.0",
+  "scikit-learn>=1.4",
+  "tqdm>=4.66",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+demo = ["gradio>=4.44"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+rift-predict = "rift.cli:predict_main"
+rift-train = "rift.cli:train_main"
+rift-eval = "rift.cli:eval_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

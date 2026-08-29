@@ -1,0 +1,61 @@
+# RIFT default config. Swap backbones and data roots here, not in code.
+seed: 42
+image_size: 224
+device: auto  # auto | cpu | cuda
+
+model:
+  # tiny        — ~0.4M params, CPU smoke tests and first-day iteration
+  # convnext_tiny — ~28M, recommended hackathon backbone (ImageNet pretrained)
+  # efficientnet_b0 — ~5M, faster alternative
+  spatial_backbone: tiny
+  pretrained: false
+  embed_dim: 256
+  dropout: 0.2
+
+train:
+  epochs: 8
+  batch_size: 16
+  lr: 3.0e-4
+  weight_decay: 0.05
+  num_workers: 0
+  official_aug_prob: 0.7
+  consistency_weight: 0.5
+  amp: true
+  save_dir: checkpoints
+
+data:
+  # ImageFolder layout: <root>/{REAL,FAKE} or {real,fake,real,aigc}
+  train_dir: data/cifake/train
+  val_dir: data/cifake/test
+  # Never put the official WildFake demo holdout here.
+  # Holdout = COCO val2017 (non-AIGC) + DALL·E Advanced (AIGC). Demo only.
+  holdout_dir: data/wildfake_holdout
+
+eval:
+  # Fit one threshold on clean validation, then freeze it for every transform.
+  # This is the deployment-correct protocol. Do not retune per JPEG quality.
+  threshold_source: clean_val
+  target_fpr: 0.05
+  batch_size: 16
+  output_dir: outputs
+  conditions:
+    - clean
+    - jpeg_90
+    - jpeg_70
+    - jpeg_50
+    - jpeg_30
+    - blur_0.5
+    - blur_1.0
+    - blur_2.0
+    - resize_0.5
+    - resize_0.25
+    - noise_0.02
+    - noise_0.05
+    - noise_0.10
+    - color_jitter
+    - center_crop_0.8
+
+predict:
+  batch_size: 16
+  tta: false
+  checkpoint: checkpoints/best.pt

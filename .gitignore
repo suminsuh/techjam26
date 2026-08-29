@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.python-version
+
+# Data and artifacts (keep samples)
+data/**
+!data/README.md
+!data/samples/
+!data/samples/**
+outputs/
+runs/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+wandb/
+.cache/
+
+# Notebooks / OS / IDE
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Eval dumps
+predictions.json
+robustness_table.*

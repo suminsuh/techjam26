@@ -1,0 +1,53 @@
+# Recommended 3-day training config. ~28M + forensic head, still << 2B.
+seed: 42
+image_size: 224
+device: auto
+
+model:
+  spatial_backbone: convnext_tiny
+  pretrained: true
+  embed_dim: 256
+  dropout: 0.2
+
+train:
+  epochs: 6
+  batch_size: 16
+  lr: 1.0e-4
+  weight_decay: 0.05
+  num_workers: 0
+  official_aug_prob: 0.75
+  consistency_weight: 0.5
+  amp: true
+  save_dir: checkpoints
+
+data:
+  train_dir: data/cifake/train
+  val_dir: data/cifake/test
+  holdout_dir: data/wildfake_holdout
+
+eval:
+  threshold_source: clean_val
+  target_fpr: 0.05
+  batch_size: 16
+  output_dir: outputs
+  conditions:
+    - clean
+    - jpeg_90
+    - jpeg_70
+    - jpeg_50
+    - jpeg_30
+    - blur_0.5
+    - blur_1.0
+    - blur_2.0
+    - resize_0.5
+    - resize_0.25
+    - noise_0.02
+    - noise_0.05
+    - noise_0.10
+    - color_jitter
+    - center_crop_0.8
+
+predict:
+  batch_size: 16
+  tta: false
+  checkpoint: checkpoints/best.pt
