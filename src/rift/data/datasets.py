@@ -49,6 +49,12 @@ class FolderDataset(Dataset):
         transform: Callable | None = None,
     ) -> None:
         self.paths = discover_images(root)
+        if self.train:
+            holdout_signatures = {"coco", "val2017", "dall-e", "dalle", "dalle_advanced"}
+            for path in self.paths:
+                parts = {part.lower() for part in path.parts}
+                if parts & holdout_signatures and "wildfake_holdout" in str(path).lower():
+                    raise RuntimeError(f"Attempted to load holdout image for training")
         if not self.paths:
             raise FileNotFoundError(f"No images under {root}")
         self.labels: list[int] = []
