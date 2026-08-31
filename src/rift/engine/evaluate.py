@@ -84,8 +84,8 @@ def evaluate_robustness(
     batch_size = int(eval_cfg.get("batch_size", 16))
     if tta is None:
         tta = bool(eval_cfg.get("tta", cfg.get("predict", {}).get("tta", False)))
-    root = Path(data_dir or cfg.get("data", {}).get("val_dir"))
-    out_dir = Path(output_dir or eval_cfg.get("output_dir", "outputs"))
+    root = Path(data_dir or cfg.get("data", {}).get("val_dir")).resolve()
+    out_dir = Path(output_dir or eval_cfg.get("output_dir", "outputs")).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     base = FolderDataset(root, image_size=image_size, train=False)

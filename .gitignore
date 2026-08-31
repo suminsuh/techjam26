@@ -7,12 +7,13 @@ venv/
 .env
 .python-version
 
-# Data and artifacts (keep samples)
+# Data and artifacts (keep samples and summary tables)
 data/**
 !data/README.md
 !data/samples/
 !data/samples/**
-outputs/
+outputs/**/predictions_by_condition.json
+outputs/**/metrics.json
 runs/
 checkpoints/
 *.pt
@@ -29,6 +30,4 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Eval dumps
 predictions.json
-robustness_table.*

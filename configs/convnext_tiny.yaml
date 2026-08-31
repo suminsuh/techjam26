@@ -1,7 +1,7 @@
 # Recommended 3-day training config. ~28M + forensic head, still << 2B.
 seed: 42
 image_size: 224
-device: auto
+device: cuda
 
 model:
   spatial_backbone: convnext_tiny
@@ -21,15 +21,16 @@ train:
   save_dir: checkpoints
 
 data:
-  train_dir: data/cifake/train
-  val_dir: data/cifake/test
+  train_dir: data/sid_set/train
+  val_dir: data/sid_set/val
   holdout_dir: data/wildfake_holdout
 
 eval:
   threshold_source: clean_val
   target_fpr: 0.05
   batch_size: 16
-  output_dir: outputs
+  tta: true
+  output_dir: outputs/convnext_tiny
   conditions:
     - clean
     - jpeg_90

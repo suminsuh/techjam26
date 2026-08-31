@@ -59,7 +59,14 @@ class TinyEncoder(nn.Module):
 
 
 class TimmSpatialEncoder(nn.Module):
-    def __init__(self, name: str, embed_dim: int, pretrained: bool, freeze_backbone: bool = False, legacy: bool = False) -> None:
+    def __init__(
+        self,
+        name: str,
+        embed_dim: int,
+        pretrained: bool,
+        freeze_backbone: bool = False,
+        legacy: bool = False,
+    ) -> None:
         super().__init__()
         import timm
 
@@ -124,7 +131,7 @@ class GatedFusion(nn.Module):
 class DualStreamDetector(nn.Module):
     def __init__(
         self,
-        spatial_backbone: str = "tiny",
+        spatial_backbone: str = "convnext_tiny",
         embed_dim: int = 256,
         pretrained: bool = False,
         freeze_spatial: bool = False,
@@ -140,7 +147,11 @@ class DualStreamDetector(nn.Module):
             self.spatial = TinyEncoder(in_ch=3, embed_dim=embed_dim)
         else:
             self.spatial = TimmSpatialEncoder(
-                spatial_backbone, embed_dim, pretrained, freeze_backbone=freeze_spatial, legacy=legacy
+                spatial_backbone,
+                embed_dim,
+                pretrained,
+                freeze_backbone=freeze_spatial,
+                legacy=legacy,
             )
         self.register_buffer("pixel_mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1), persistent=False)
         self.register_buffer("pixel_std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1), persistent=False)
@@ -174,7 +185,7 @@ class DualStreamDetector(nn.Module):
 def build_model(cfg: dict[str, Any], legacy: bool = False) -> DualStreamDetector:
     model_cfg = cfg.get("model", {})
     return DualStreamDetector(
-        spatial_backbone=model_cfg.get("spatial_backbone", "tiny"),
+        spatial_backbone=model_cfg.get("spatial_backbone", "convnext_tiny"),
         embed_dim=int(model_cfg.get("embed_dim", 256)),
         pretrained=bool(model_cfg.get("pretrained", False)),
         freeze_spatial=bool(model_cfg.get("freeze_spatial", False)),

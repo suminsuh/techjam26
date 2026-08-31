@@ -48,6 +48,9 @@ class FolderDataset(Dataset):
         two_view: bool = False,
         transform: Callable | None = None,
     ) -> None:
+        self.train = train
+        self.image_size = image_size
+        self.two_view = two_view
         self.paths = discover_images(root)
         if self.train:
             holdout_signatures = {"coco", "val2017", "dall-e", "dalle", "dalle_advanced"}

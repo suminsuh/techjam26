@@ -70,8 +70,13 @@ def train_model(cfg: dict[str, Any], resume: str | Path | None = None) -> Path:
         payload = torch.load(resume, map_location=device, weights_only=False)
         model.load_state_dict(payload["model"] if isinstance(payload, dict) and "model" in payload else payload)
 
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    trainable_count = sum(p.numel() for p in trainable_params)
+    total_count = sum(p.numel() for p in model.parameters())
+    print(f"Model parameters: {trainable_count:,} trainable / {total_count:,} total ({trainable_count/total_count:.2%} active)")
+
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        trainable_params,
         lr=float(train_cfg.get("lr", 3e-4)),
         weight_decay=float(train_cfg.get("weight_decay", 0.05)),
     )
