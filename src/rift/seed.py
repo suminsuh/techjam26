@@ -18,6 +18,6 @@ def seed_everything(seed: int) -> None:
 
 
 def resolve_device(name: str = "auto") -> torch.device:
-    if name == "auto":
+    if name == "auto" or (name.startswith("cuda") and not torch.cuda.is_available()):
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(name)

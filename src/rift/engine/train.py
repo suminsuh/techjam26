@@ -22,8 +22,7 @@ def _consistency_loss(clean_logit: torch.Tensor, aug_logit: torch.Tensor) -> tor
     so the loss stays in the same units as the submitted `pred` scores.
     """
     p_clean = torch.sigmoid(clean_logit.detach())
-    p_aug = torch.sigmoid(aug_logit)
-    return F.binary_cross_entropy(p_aug, p_clean)
+    return F.binary_cross_entropy_with_logits(aug_logit, p_clean)
 
 
 def train_model(cfg: dict[str, Any], resume: str | Path | None = None) -> Path:

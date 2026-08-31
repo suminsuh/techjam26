@@ -59,24 +59,48 @@ class TinyEncoder(nn.Module):
 
 
 class TimmSpatialEncoder(nn.Module):
-    def __init__(self, name: str, embed_dim: int, pretrained: bool) -> None:
+    def __init__(self, name: str, embed_dim: int, pretrained: bool, freeze_backbone: bool = False, legacy: bool = False) -> None:
         super().__init__()
         import timm
 
         self.backbone = timm.create_model(name, pretrained=pretrained, num_classes=0)
+        self.freeze_backbone = freeze_backbone
+        if freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
         feat_dim = int(self.backbone.num_features)
-        self.proj = nn.Identity() if feat_dim == embed_dim else nn.Linear(feat_dim, embed_dim)
+        if legacy:
+            self.proj = nn.Identity() if feat_dim == embed_dim else nn.Linear(feat_dim, embed_dim)
+        else:
+            self.proj = (
+                nn.Sequential(
+                    nn.Linear(feat_dim, embed_dim),
+                    nn.LayerNorm(embed_dim),
+                    nn.GELU(),
+                )
+                if feat_dim != embed_dim
+                else nn.LayerNorm(embed_dim)
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        feats = self.backbone(x)
+        if self.freeze_backbone:
+            with torch.no_grad():
+                feats = self.backbone(x)
+        else:
+            feats = self.backbone(x)
         return self.proj(feats)
 
 
 class GatedFusion(nn.Module):
-    """Softmax gate over (spatial, forensic). Returned for the demo / analysis."""
+    """Softmax gate over (spatial, forensic) with bounded anti-collapse routing."""
 
-    def __init__(self, dim: int) -> None:
+    def __init__(self, dim: int, min_floor: float = 0.10, legacy: bool = False) -> None:
         super().__init__()
+        self.legacy = legacy
+        self.min_floor = min_floor
+        if not legacy:
+            self.spatial_norm = nn.LayerNorm(dim)
+            self.forensic_norm = nn.LayerNorm(dim)
         self.gate = nn.Sequential(
             nn.Linear(dim * 2, dim),
             nn.GELU(),
@@ -84,8 +108,16 @@ class GatedFusion(nn.Module):
         )
 
     def forward(self, spatial: torch.Tensor, forensic: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        weights = torch.softmax(self.gate(torch.cat([spatial, forensic], dim=1)), dim=1)
-        fused = torch.cat([weights[:, :1] * spatial, weights[:, 1:] * forensic], dim=1)
+        if self.legacy:
+            weights = torch.softmax(self.gate(torch.cat([spatial, forensic], dim=1)), dim=1)
+            fused = torch.cat([weights[:, :1] * spatial, weights[:, 1:] * forensic], dim=1)
+            return fused, weights
+        s_norm = self.spatial_norm(spatial)
+        f_norm = self.forensic_norm(forensic)
+        raw_weights = torch.softmax(self.gate(torch.cat([s_norm, f_norm], dim=1)), dim=1)
+        scale = 1.0 - 2.0 * self.min_floor
+        weights = scale * raw_weights + self.min_floor
+        fused = torch.cat([weights[:, :1] * s_norm, weights[:, 1:] * f_norm], dim=1)
         return fused, weights
 
 
@@ -95,6 +127,8 @@ class DualStreamDetector(nn.Module):
         spatial_backbone: str = "tiny",
         embed_dim: int = 256,
         pretrained: bool = False,
+        freeze_spatial: bool = False,
+        legacy: bool = False,
         dropout: float = 0.2,
     ) -> None:
         super().__init__()
@@ -105,10 +139,12 @@ class DualStreamDetector(nn.Module):
         if spatial_backbone == "tiny":
             self.spatial = TinyEncoder(in_ch=3, embed_dim=embed_dim)
         else:
-            self.spatial = TimmSpatialEncoder(spatial_backbone, embed_dim, pretrained)
+            self.spatial = TimmSpatialEncoder(
+                spatial_backbone, embed_dim, pretrained, freeze_backbone=freeze_spatial, legacy=legacy
+            )
         self.register_buffer("pixel_mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1), persistent=False)
         self.register_buffer("pixel_std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1), persistent=False)
-        self.fusion = GatedFusion(embed_dim)
+        self.fusion = GatedFusion(embed_dim, legacy=legacy)
         self.head = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(embed_dim * 2, embed_dim),
@@ -135,11 +171,13 @@ class DualStreamDetector(nn.Module):
         return count_parameters(self)
 
 
-def build_model(cfg: dict[str, Any]) -> DualStreamDetector:
+def build_model(cfg: dict[str, Any], legacy: bool = False) -> DualStreamDetector:
     model_cfg = cfg.get("model", {})
     return DualStreamDetector(
         spatial_backbone=model_cfg.get("spatial_backbone", "tiny"),
         embed_dim=int(model_cfg.get("embed_dim", 256)),
         pretrained=bool(model_cfg.get("pretrained", False)),
+        freeze_spatial=bool(model_cfg.get("freeze_spatial", False)),
+        legacy=legacy or bool(model_cfg.get("legacy", False)),
         dropout=float(model_cfg.get("dropout", 0.2)),
     )

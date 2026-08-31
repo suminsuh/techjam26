@@ -17,17 +17,18 @@ from rift.engine.predict import load_checkpoint
 from rift.metrics import choose_threshold, evaluate_scores
 from rift.preprocess import open_rgb, pil_to_tensor
 from rift.seed import resolve_device
-from rift.transforms import get_condition
+from rift.transforms import center_crop, get_condition, jpeg_compress
 
 
 class ConditionDataset(Dataset):
     """Re-reads source images and applies one official condition before resize."""
 
-    def __init__(self, paths: list[Path], labels: list[int], condition: str, image_size: int) -> None:
+    def __init__(self, paths: list[Path], labels: list[int], condition: str, image_size: int, tta: bool = False) -> None:
         self.paths = paths
         self.labels = labels
         self.condition_name = condition
         self.image_size = image_size
+        self.tta = tta
 
     def __len__(self) -> int:
         return len(self.paths)
@@ -36,23 +37,37 @@ class ConditionDataset(Dataset):
         path = self.paths[index]
         seed = zlib.crc32(path.as_posix().encode("utf-8"))
         image = get_condition(self.condition_name, seed=seed)(open_rgb(path))
+        if self.tta:
+            views = [image, jpeg_compress(image, 90), center_crop(image, 0.8)]
+            tensor = torch.stack([pil_to_tensor(v, self.image_size) for v in views])
+        else:
+            tensor = pil_to_tensor(image, self.image_size)
         return {
-            "image": pil_to_tensor(image, self.image_size),
+            "image": tensor,
             "label": self.labels[index],
             "path": path.as_posix(),
         }
 
 
 @torch.no_grad()
-def _score_loader(model, loader, device) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray]:
+def _score_loader(model, loader, device, tta: bool = False) -> tuple[np.ndarray, np.ndarray, list[str], np.ndarray]:
     scores, labels, paths, gates = [], [], [], []
     for batch in tqdm(loader, desc="eval", leave=False):
         images = batch["image"].to(device)
-        logits, aux = model(images, return_aux=True)
-        scores.append(torch.sigmoid(logits).cpu().numpy())
+        if tta and images.dim() == 5:
+            b_size, n_views, c, h, w = images.shape
+            flat = images.view(b_size * n_views, c, h, w)
+            logits, aux = model(flat, return_aux=True)
+            probs = torch.sigmoid(logits).view(b_size, n_views).mean(dim=1)
+            gate = aux["gate"].view(b_size, n_views, -1).mean(dim=1)
+            scores.append(probs.cpu().numpy())
+            gates.append(gate.cpu().numpy())
+        else:
+            logits, aux = model(images, return_aux=True)
+            scores.append(torch.sigmoid(logits).cpu().numpy())
+            gates.append(aux["gate"].cpu().numpy())
         labels.append(np.asarray(batch["label"], dtype=int))
         paths.extend(batch["path"])
-        gates.append(aux["gate"].cpu().numpy())
     return np.concatenate(scores), np.concatenate(labels), paths, np.concatenate(gates)
 
 
@@ -61,11 +76,14 @@ def evaluate_robustness(
     data_dir: str | Path | None = None,
     checkpoint: str | Path | None = None,
     output_dir: str | Path | None = None,
+    tta: bool | None = None,
 ) -> dict[str, Any]:
     device = resolve_device(cfg.get("device", "auto"))
     image_size = int(cfg.get("image_size", 224))
     eval_cfg = cfg.get("eval", {})
     batch_size = int(eval_cfg.get("batch_size", 16))
+    if tta is None:
+        tta = bool(eval_cfg.get("tta", cfg.get("predict", {}).get("tta", False)))
     root = Path(data_dir or cfg.get("data", {}).get("val_dir"))
     out_dir = Path(output_dir or eval_cfg.get("output_dir", "outputs"))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -76,17 +94,17 @@ def evaluate_robustness(
     conditions = list(eval_cfg.get("conditions", ["clean"]))
     clean_name = "clean" if "clean" in conditions else conditions[0]
 
-    clean_ds = ConditionDataset(base.paths, base.labels, clean_name, image_size)
+    clean_ds = ConditionDataset(base.paths, base.labels, clean_name, image_size, tta=tta)
     clean_loader = DataLoader(clean_ds, batch_size=batch_size, shuffle=False, num_workers=0)
-    clean_scores, clean_labels, _, _ = _score_loader(model, clean_loader, device)
+    clean_scores, clean_labels, _, _ = _score_loader(model, clean_loader, device, tta=tta)
     threshold = choose_threshold(clean_labels, clean_scores, float(eval_cfg.get("target_fpr", 0.05)))
 
     table: list[dict[str, Any]] = []
     per_condition: dict[str, Any] = {}
     for name in conditions:
-        dataset = ConditionDataset(base.paths, base.labels, name, image_size)
+        dataset = ConditionDataset(base.paths, base.labels, name, image_size, tta=tta)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-        scores, labels, paths, gates = _score_loader(model, loader, device)
+        scores, labels, paths, gates = _score_loader(model, loader, device, tta=tta)
         report = evaluate_scores(labels, scores, threshold)
         row = {"condition": name, **report.as_dict()}
         row["mean_gate_spatial"] = round(float(gates[:, 0].mean()), 4)

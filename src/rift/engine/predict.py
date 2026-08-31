@@ -18,13 +18,24 @@ from rift.transforms import center_crop, jpeg_compress
 
 
 def load_checkpoint(path: str | Path | None, cfg: dict[str, Any], device: torch.device) -> DualStreamDetector:
-    model = build_model(cfg)
     resolved = Path(path) if path else None
     if resolved and resolved.exists():
         payload = torch.load(resolved, map_location=device, weights_only=False)
         state = payload["model"] if isinstance(payload, dict) and "model" in payload else payload
+        is_legacy = (
+            "spatial.proj.weight" in state
+            or ("spatial.backbone.stem.0.weight" in state and "spatial.proj.0.weight" not in state)
+            or "fusion.spatial_norm.weight" not in state
+        )
+        saved_cfg = payload.get("config", {}) if isinstance(payload, dict) else {}
+        # Merge saved config with passed cfg if present
+        merged_cfg = {**cfg}
+        if "model" in saved_cfg and "spatial_backbone" in saved_cfg["model"]:
+            merged_cfg.setdefault("model", {})["spatial_backbone"] = saved_cfg["model"]["spatial_backbone"]
+        model = build_model(merged_cfg, legacy=is_legacy)
         model.load_state_dict(state)
     else:
+        model = build_model(cfg)
         location = str(resolved) if resolved else "(none)"
         warnings.warn(
             f"No checkpoint at {location}. Using randomly initialized weights. "
