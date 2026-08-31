@@ -29,16 +29,19 @@ def _tensorize(image: Image.Image, size: int) -> torch.Tensor:
     return pil_to_tensor(image, size).unsqueeze(0)
 
 
-def _load_threshold(default: float = 0.5) -> float:
-    metrics = ROOT / "outputs" / "metrics.json"
-    if not metrics.exists():
-        return default
-    try:
-        import json
+def _load_threshold(default: float = 0.0852) -> float:
+    for path in [
+        ROOT / "outputs" / "convnext_tiny" / "metrics.json",
+        ROOT / "outputs" / "metrics.json",
+    ]:
+        if path.exists():
+            try:
+                import json
 
-        return float(json.loads(metrics.read_text(encoding="utf-8"))["threshold"])
-    except (KeyError, TypeError, ValueError):
-        return default
+                return float(json.loads(path.read_text(encoding="utf-8"))["threshold"])
+            except (KeyError, TypeError, ValueError):
+                continue
+    return default
 
 
 def run_demo(config: str, checkpoint: str | None, share: bool) -> None:
@@ -126,8 +129,8 @@ def run_demo(config: str, checkpoint: str | None, share: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/default.yaml")
-    parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--config", default="configs/convnext_tiny.yaml")
+    parser.add_argument("--checkpoint", default="checkpoints/best.pt")
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()
     run_demo(args.config, args.checkpoint, args.share)
