@@ -1,15 +1,21 @@
-# Core — keep the default stack under the <2B-parameter rule.
-torch>=2.2
-torchvision>=0.17
+# Core Framework & Deep Learning (< 2B rule)
+torch>=2.2.0
+torchvision>=0.17.0
 timm>=1.0.0
-numpy>=1.26
-scipy>=1.11
-pillow>=10.0
-pyyaml>=6.0
-scikit-learn>=1.4
-tqdm>=4.66
-matplotlib>=3.8
 
-# Demo + tests (install when you need them)
-gradio>=4.44
-pytest>=8.0
+# Numerical, Vision & Forensic Feature Processing
+numpy>=1.26.0
+scipy>=1.11.0
+pillow>=10.0.0
+scikit-learn>=1.4.0
+pandas>=2.0.0
+huggingface_hub>=0.20.0
+pyyaml>=6.0.0
+tqdm>=4.66.0
+matplotlib>=3.8.0
+
+# Interactive Demo & Visualization
+gradio>=4.44.0
+
+# Testing & Verification
+pytest>=8.0.0

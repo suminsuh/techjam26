@@ -1,149 +1,171 @@
 # RIFT — Robust Image Forgery Tracer
 
-TikTok TechJam 2026 · Track 5 · *Robust Detection of AI-Generated Images Under Real-World Transformations*
+**TikTok TechJam 2026 · Track 5 · *Robust Detection of AI-Generated Images Under Real-World Transformations***
 
-RIFT is a hackathon-scale AIGC detector built around the thing the brief actually asks for: **keep the decision stable after JPEG, blur, thumbnailing, noise, filters, and crops** — not just look good on clean lab images.
+RIFT is a high-performance AIGC detector designed around the core requirement of the brief: **maintaining stable, accurate detection under real-world social media degradations** (JPEG re-encoding, Gaussian blur, thumbnail resizing, additive noise, color jitter, and cropping) — not just reporting laboratory accuracy on pristine images.
 
-Most teams will fine-tune a CNN on CIFAKE, quote a clean accuracy, and watch it collapse after a WhatsApp re-encode. This repo starts from the opposite assumption.
+---
 
-## Why this design
+## 🏗️ Architecture: Dual-Stream Gated Fusion
 
-Research on AIGC detection is consistent on one point: **forensic frequency cues are strong on pristine images and fragile after compression**. Semantic / spatial backbones degrade more slowly. A detector that only uses one of those families is either brittle or weak.
+Research shows that **forensic frequency cues are sensitive on pristine images but degrade under heavy compression**, while **semantic/spatial backbones degrade smoothly**. RIFT combines both paradigms via learned trust-gated routing:
 
-RIFT therefore does four things on purpose:
-
-1. **Dual stream.** A spatial encoder looks at texture and structure. A forensic encoder looks at SRM residuals, log-FFT magnitude, and FFT **phase** (phase survives JPEG quantization better than magnitude).
-2. **Trust gate.** A 2-way softmax decides how much to believe each stream. The demo prints this. Error analysis uses it. You can show a JPEG-30 image flipping the gate from forensic → spatial.
-3. **Consistency training.** Each image is seen under two independent official transforms. The AIGC probability is pulled together. That is the training-time version of “this photo got reposted.”
-4. **Fixed-threshold evaluation.** One cutoff is fit on **clean** validation (default: 5% FPR) and **frozen** for every transform. Retuning per JPEG quality inflates robustness and is not how a platform ships.
-
-Parameter budget stays far under the **< 2B** rule: default `tiny` ≈ 0.4M, `efficientnet_b0` ≈ 5M, `convnext_tiny` ≈ 28M plus a small forensic head.
-
-## What is in the box
-
-| Path | Role |
-|------|------|
-| `src/rift/transforms.py` | Official TechJam transform grid, exact parameters |
-| `src/rift/features.py` | SRM + FFT magnitude + phase front-end |
-| `src/rift/models/dual_stream.py` | Dual-stream model + gated fusion |
-| `src/rift/engine/train.py` | Official-aug + consistency training |
-| `src/rift/engine/evaluate.py` | Frozen-threshold robustness table (deliverable 4) |
-| `src/rift/engine/errors.py` | FP / FN note (deliverable 5) |
-| `scripts/predict.py` | Required scorer: folder → `{image_path, pred}` JSON |
-| `scripts/demo.py` | Gradio: one upload, full transform probe, Grad-CAM |
-
-## Setup
-
-Python 3.10–3.13, Windows / macOS / Linux.
-
-```powershell
-cd C:\Users\aiinapp\hackathons\techjam26
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[demo,dev]"
-python scripts/prepare_data.py --samples
-pytest -q
+```text
+                                  ┌──> ConvNeXt-Tiny (Spatial Stream) ────────┐
+                                  │    [Texture regularity & spatial cues]    │
+                                  │                                           ├──> [ Gated Fusion ] ──> [ Classifier ] ──> P(AIGC)
+Input Image (RGB) ────────────────┤                                           │    (Trust Gate)
+                                  │                                           │
+                                  └──> SRM + FFT Magnitude + Phase ───────────┘
+                                       [9-Channel Forensic Stream]
 ```
 
-If `pip install -e .` is slow, `pip install -r requirements.txt` then run scripts with `PYTHONPATH=src` (already handled inside `scripts/`).
+1. **Spatial Stream:** `convnext_tiny` (~28M parameters, ImageNet pretrained) captures high-level structural patterns and semantic textures that survive aggressive compression.
+2. **Forensic Stream:** A 9-channel frontend extracting 3 Steganalysis Rich Model (SRM) spatial residuals, 3 FFT log-magnitude channels, and 3 FFT phase channels (phase preserves edge geometry across JPEG quantization).
+3. **Learned Trust Gate:** Dynamically balances spatial vs. forensic evidence per image. When severe compression quantizes high frequencies, the gate shifts confidence toward the spatial stream.
+4. **Consistency Regularization:** Trained with two-view perturbation matching to prevent decision flips upon image reposting.
+5. **Parameter Budget:** **~28.67M parameters**, well below the competition's **< 2B** ceiling (utilizing only **1.4%** of the allowed budget).
 
-Untrained weights will warn and score ~0.5. That is expected. Do not submit those JSON files.
+---
 
-## Publishing to GitHub
+## 📊 Benchmark Results
 
-Safe to commit: source, configs, tests, `data/samples`, README.  
-Do **not** commit `.venv/`, `outputs/`, `checkpoints/`, downloaded datasets, or `.pt` weights.
+### 1. Robustness Evaluation on Validation Set (`data/sid_set/val`, $n=1000$, TTA)
+*Operating threshold frozen on clean validation at 5% target FPR:* `0.0852`
+
+| Condition | Accuracy | AUROC | AP | FPR | FNR | Spatial Gate | Forensic Gate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`clean`** | **97.6%** | **99.8%** | **99.9%** | 4.2% | **0.6%** | 63.0% | 37.0% |
+| **`jpeg_90`** | 97.4% | 99.9% | 99.9% | 4.2% | 1.0% | 63.0% | 37.0% |
+| **`jpeg_70`** | 97.5% | 99.9% | 99.9% | 3.8% | 1.2% | 63.0% | 37.0% |
+| **`jpeg_50`** | 97.6% | 99.8% | 99.8% | 3.6% | 1.2% | 62.9% | 37.1% |
+| **`jpeg_30`** | 97.8% | 99.9% | 99.9% | 3.4% | 1.0% | 62.9% | 37.1% |
+| **`blur_0.5`** | 97.8% | 99.9% | 99.9% | 3.4% | 1.0% | 63.1% | 36.9% |
+| **`blur_1.0`** | 97.9% | 99.8% | 99.9% | 2.6% | 1.6% | 63.3% | 36.7% |
+| **`blur_2.0`** | 98.1% | 99.8% | 99.8% | 2.0% | 1.8% | 63.1% | 36.9% |
+| **`resize_0.5`** | 98.1% | 99.8% | 99.9% | 2.0% | 1.8% | 63.3% | 36.7% |
+| **`resize_0.25`** | 97.9% | 99.8% | 99.8% | 1.8% | 2.4% | 62.5% | 37.5% |
+| **`noise_0.02`** | 97.6% | 99.8% | 99.9% | 4.0% | 0.8% | 63.0% | 37.0% |
+| **`noise_0.05`** | 98.0% | 99.9% | 99.9% | 2.6% | 1.4% | 62.9% | 37.1% |
+| **`noise_0.10`** | 98.3% | 99.8% | 99.9% | 1.6% | 1.8% | 62.5% | 37.5% |
+| **`color_jitter`** | 97.6% | 99.9% | 99.9% | 3.8% | 1.0% | 62.7% | 37.3% |
+| **`center_crop_0.8`** | 97.0% | 99.5% | 99.5% | 2.8% | 3.2% | 58.6% | 41.4% |
+
+---
+
+### 2. Generalization on Unseen Holdout Set (`data/wildfake_holdout`, $n=1000$, TTA)
+*Zero-shot transfer to unseen generators (COCO Real vs. DALL·E 3 AIGC):*
+
+| Condition | Accuracy | AUROC | AP | FPR | FNR |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **`clean`** | **64.9%** | **78.4%** | **79.0%** | 5.0% | **65.2%** |
+| **`jpeg_70`** | 65.0% | 79.8% | 80.2% | 4.0% | 66.0% |
+| **`jpeg_30`** | 63.5% | 78.6% | 79.4% | 3.8% | 69.2% |
+| **`blur_0.5`** | 65.1% | 77.7% | 79.1% | 4.6% | 65.2% |
+| **`noise_0.05`** | 64.6% | 90.2% | 90.9% | 1.2% | 69.6% |
+| **`noise_0.10`** | 63.2% | 94.7% | 94.8% | 0.4% | 73.2% |
+
+---
+
+## ⚡ Quickstart
+
+### 1. Environment Setup
+Requires Python 3.10–3.13 (CUDA or CPU).
 
 ```powershell
-git add .
-git status   # confirm no .venv, no checkpoints, no cifake
-git commit -m "Add RIFT starter for TechJam Track 5 AIGC detection."
-gh repo create rift --public --source=. --remote=origin --push
+# Clone and enter directory
+cd techjam26
+
+# Install dependencies
+pip install -r requirements.txt
+
+# For NVIDIA GPU acceleration (e.g. RTX 4060 / CUDA 12.6):
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# Run unit tests
+python -m pytest -v
 ```
 
-Or create an empty GitHub repo in the browser and `git remote add origin <url>` then `git push -u origin HEAD`.
+---
 
-## Data
+## 🚀 Execution & Deliverables
 
-Do **not** train on the organizers' WildFake demonstration holdout:
-
-- Non-AIGC: COCO val2017 (4998)
-- AIGC: DALL·E Advanced (8843)
-
-That split is demo-only and will not count toward the score. See `data/README.md`.
-
-Suggested path for the three days:
-
-1. **Day 1** — CIFAKE to prove the pipeline (`tiny` backbone, CPU or one GPU).
-2. **Day 2** — SID_Set or a WildFake *non-holdout* slice + `convnext_tiny`.
-3. **Day 3** — robustness table, error note, Gradio video, Devpost.
+### A. Predict (Required JSON Output)
+Scores any directory of images and writes the standard competition format:
 
 ```powershell
-python scripts/train.py --config configs/default.yaml --train_dir data/cifake/train --val_dir data/cifake/test
-python scripts/train.py --config configs/convnext_tiny.yaml --train_dir data/cifake/train --val_dir data/cifake/test
-```
-
-## Predict (required deliverable)
-
-```powershell
-python scripts/predict.py --input_dir path\to\images --output predictions.json
+python scripts/predict.py --config configs/convnext_tiny.yaml --checkpoint checkpoints/best.pt --input_dir path/to/images --output predictions.json --aux
 ```
 
 ```json
 [
-  {"image_path": "path/to/img_001.jpg", "pred": 0.87},
-  {"image_path": "path/to/img_002.jpg", "pred": 0.12}
+  {
+    "image_path": "data/samples/FAKE/fake_001.png",
+    "pred": 0.941,
+    "gate_spatial": 0.628,
+    "gate_forensic": 0.372
+  }
 ]
 ```
 
-`pred` is P(image is AIGC). Add `--aux` if you also want the gate weights.
-
-## Robustness table + error analysis
-
-```powershell
-python scripts/evaluate.py --config configs/default.yaml --data_dir data/cifake/test --output_dir outputs
-python scripts/error_analysis.py --metrics outputs/metrics.json --preds outputs/predictions_by_condition.json --output outputs/error_analysis.md
-```
-
-`outputs/robustness_table.md` is the compact clean-vs-transformed summary the brief asks for. Quote **accuracy / AUROC / FPR / FNR at the frozen threshold**, not a freshly tuned cutoff per row.
-
-## Demo video loop
+### B. Run Robustness Benchmark
+Computes the 15-condition robustness table under frozen 5% FPR:
 
 ```powershell
-python scripts/demo.py --config configs/default.yaml --checkpoint checkpoints/best.pt
+# Validation set evaluation
+python scripts/evaluate.py --config configs/convnext_tiny.yaml --checkpoint checkpoints/best.pt --output_dir outputs/convnext_tiny
+
+# Holdout evaluation
+python scripts/evaluate.py --config configs/convnext_tiny.yaml --checkpoint checkpoints/best.pt --data_dir data/wildfake_holdout --output_dir outputs/convnext_holdout
 ```
 
-Record: upload → score → Grad-CAM → the robustness dataframe on the same image. That is the end-to-end story.
+### C. Launch Interactive Gradio Demo
+Interactive web interface for single-image upload, live gate breakdown, spatial Grad-CAM activation overlay, and instant 8-transform perturbation stress-testing:
 
-## Team: what to do next (do these, not a rewrite)
+```powershell
+python scripts/demo.py --config configs/convnext_tiny.yaml --checkpoint checkpoints/best.pt
+```
+Open **`http://127.0.0.1:7860`** in your browser.
 
-The base is intentionally complete enough to train and incomplete enough to win on. Highest-leverage upgrades, in order:
+### D. Train Model
+Train the ConvNeXt-Tiny + Forensic dual-stream model on SID_Set:
 
-1. **Swap the spatial backbone** to `convnext_tiny` once CIFAKE overfits. Config is already there.
-2. **Optional frozen CLIP stream** (ViT-B/32 is ~151M, still legal). CLIP linear probes generalize to unseen generators; add it as a third gated expert, do not replace the forensic stream.
-3. **Generator-ID auxiliary head** on SID_Set / WildFake. Forces features that still work when the test generator is new.
-4. **Test-time augmentation** (`predict.tta`) averaging clean + JPEG-90 + mild crop. Cheap robustness at inference.
-5. **Calibration** (temperature scaling on clean val) so `pred` is a real probability, not an overconfident logit.
-6. **Hard-negative mining** from the error note: real screenshots, memes, and heavily compressed camera photos.
+```powershell
+python scripts/train.py --config configs/convnext_tiny.yaml
+```
 
-Do not: train a 1.5B vision model, build a production moderation platform, or chase CIFAKE test accuracy as the headline metric.
+---
 
-## Limitations (seed text for the README / Devpost)
+## 📂 Repository Layout
 
-- Untrained weights are random; run `train.py` before any demo.
-- CIFAKE is 32×32 Stable Diffusion 1.4 vs CIFAR-10. It is a pipeline check, not a generalization claim.
-- Forensic cues and JPEG are in tension. The gate is a mitigation, not a proof.
-- We have not yet measured the official WildFake holdout. When we do, we will report the frozen threshold, not a retuned one.
-- False positives on heavily compressed authentic images are the product risk we are optimizing against (`target_fpr: 0.05`).
+```text
+techjam26/
+├── configs/
+│   ├── convnext_tiny.yaml             # Primary submission config
+│   └── default.yaml                   # Starter base config
+├── checkpoints/
+│   ├── best.pt                        # Best model checkpoint (ConvNeXt-Tiny)
+│   └── last.pt                        # Last epoch weights
+├── outputs/
+│   ├── convnext_tiny/                 # Validation robustness benchmark outputs
+│   └── convnext_holdout/              # WildFake holdout benchmark outputs
+├── scripts/
+│   ├── predict.py                     # Official folder scorer -> predictions.json
+│   ├── evaluate.py                    # 15-condition frozen-threshold evaluator
+│   ├── demo.py                        # Gradio UI & Grad-CAM visualizer
+│   ├── train.py                       # Training engine with consistency loss
+│   ├── error_analysis.py              # FP/FN report generator
+│   └── prepare_sid_set.py             # Training dataset setup
+├── src/rift/                          # Core RIFT package
+│   ├── models/dual_stream.py          # ConvNeXt-Tiny + SRM/FFT Dual-Stream
+│   ├── features.py                    # 9-channel SRM + FFT Magnitude & Phase
+│   ├── transforms.py                  # 15 official Track 5 transformations
+│   ├── metrics.py                     # Fixed-threshold AUROC/FPR/FNR metrics
+│   └── engine/                        # Predict, train, evaluate, explain engines
+└── predictions.json                   # Sample scored output deliverable
+```
 
-## Team contributions
+---
 
-| Member | Area |
-|--------|------|
-| _name_ | Model / training |
-| _name_ | Evaluation / robustness table |
-| _name_ | Demo / video / write-up |
-
-## License
-
-MIT. Datasets remain under their own licenses — check CIFAKE, SID_Set, and WildFake before you publish weights trained on them.
+## 📜 License
+MIT License. Datasets remain subject to their respective licenses (SID_Set, WildFake, COCO).
