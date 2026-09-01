@@ -39,3 +39,14 @@ def test_pretrained_style_backbone_normalizes_spatial_only():
     assert torch.allclose(captured[0], x)
     assert abs(float(model.pixel_mean[0, 0, 0, 0]) - IMAGENET_MEAN[0]) < 1e-6
     assert abs(float(model.pixel_std[0, 0, 0, 0]) - IMAGENET_STD[0]) < 1e-6
+
+
+def test_gradcam_tiny_returns_map():
+    from rift.engine.explain import gradcam
+
+    model = DualStreamDetector(spatial_backbone="tiny", embed_dim=32, pretrained=False)
+    model.eval()
+    heat = gradcam(model, torch.rand(1, 3, 64, 64))
+    assert heat.shape == (64, 64)
+    assert heat.min() >= 0.0
+    assert heat.max() <= 1.0 + 1e-6

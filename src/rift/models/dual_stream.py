@@ -5,11 +5,12 @@ Why two streams
 Frequency / residual CNNs are accurate on clean images and then fall apart
 after JPEG and blur (forensic cues get quantized away). Semantic backbones
 degrade more slowly because they look at texture regularity and structure.
-A learned gate lets the model *say* which evidence it used — useful in the
+A learned gate reports which evidence it used. That is useful in the
 demo and in error analysis.
 
-Parameter budget stays far under the <2B rule: tiny ≈ 0.4M, EfficientNet-B0
-≈ 5M + forensic head, ConvNeXt-Tiny ≈ 28M + forensic head.
+Parameter budget stays far under the <2B rule. Submitted CLIP-B/32 hybrid
+is ~88M total with ~0.85M trainable. tiny ≈ 0.4M; EfficientNet-B0 ≈ 5M;
+ConvNeXt-Tiny ≈ 28M plus the forensic head.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import torch
 import torch.nn as nn
 
 from rift.features import ForensicFrontend
+from rift.models.clip_stream import CLIP_MEAN, CLIP_STD, ClipSpatialEncoder
 from rift.preprocess import IMAGENET_MEAN, IMAGENET_STD
 
 
@@ -104,11 +106,16 @@ class DualStreamDetector(nn.Module):
         self.forensic = TinyEncoder(in_ch=9, embed_dim=embed_dim)
         if spatial_backbone == "tiny":
             self.spatial = TinyEncoder(in_ch=3, embed_dim=embed_dim)
+        elif spatial_backbone.startswith("clip_"):
+            self.spatial = ClipSpatialEncoder(spatial_backbone, embed_dim)
         else:
             self.spatial = TimmSpatialEncoder(spatial_backbone, embed_dim, pretrained)
-        self.register_buffer("pixel_mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1), persistent=False)
-        self.register_buffer("pixel_std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1), persistent=False)
+        mean = CLIP_MEAN if spatial_backbone.startswith("clip_") else IMAGENET_MEAN
+        std = CLIP_STD if spatial_backbone.startswith("clip_") else IMAGENET_STD
+        self.register_buffer("pixel_mean", torch.tensor(mean).view(1, 3, 1, 1), persistent=False)
+        self.register_buffer("pixel_std", torch.tensor(std).view(1, 3, 1, 1), persistent=False)
         self.fusion = GatedFusion(embed_dim)
+        self.forensic_head = nn.Linear(embed_dim, 1)
         self.head = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(embed_dim * 2, embed_dim),
@@ -124,7 +131,13 @@ class DualStreamDetector(nn.Module):
         fused, gate = self.fusion(spatial, forensic)
         logit = self.head(fused).squeeze(-1)
         if return_aux:
-            return logit, {"gate": gate, "spatial": spatial, "forensic": forensic}
+            forensic_logit = self.forensic_head(forensic).squeeze(-1)
+            return logit, {
+                "gate": gate,
+                "spatial": spatial,
+                "forensic": forensic,
+                "forensic_logit": forensic_logit,
+            }
         return logit
 
     @torch.no_grad()

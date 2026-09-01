@@ -1,33 +1,49 @@
 # Data
 
-Keep large datasets out of git. Point `configs/default.yaml` at local folders.
+Keep large datasets out of git. Point configs at local folders.
 
-## Folder convention
+## Submitted training set: SID_Set
+
+`configs/clip_sidset.yaml` caches **real vs full_synthetic** only (label 2 / tampered is dropped).
 
 ```
-data/cifake/train/REAL/*.jpg
-data/cifake/train/FAKE/*.jpg
-data/cifake/test/REAL/*.jpg
-data/cifake/test/FAKE/*.jpg
+data/sidset/train/{REAL,FAKE}/*.jpg
+data/sidset/val/{REAL,FAKE}/*.jpg
 ```
 
-Accepted class folder names: `REAL`/`real`/`authentic` and `FAKE`/`fake`/`aigc`/`synthetic`/`generated`.
+```powershell
+$env:HF_HUB_DISABLE_XET = "1"
+python scripts/cache_sidset.py
+```
+
+The reported checkpoint used 10k images per class (20k train). The yaml can cache more (40k / 5k) if you have disk.
+
+## CIFAKE (pipeline check only)
+
+Hugging Face: `dragonintelligence/CIFAKE-image-dataset`. Labels on that mirror are 0=FAKE, 1=REAL; RIFT maps them so `pred` is still P(AI-generated). Prefer `configs/clip_cifake.yaml` over dumping 32x32 files unless you need ImageFolder.
+
+```
+data/cifake/train/{REAL,FAKE}/*.jpg
+data/cifake/test/{REAL,FAKE}/*.jpg
+```
+
+Accepted class folder names: `REAL` / `real` / `authentic` / `coco` and `FAKE` / `fake` / `aigc` / `synthetic` / `generated`.
 
 ## Holdout (do not train)
 
-The organizers' demonstration subset of WildFake is **off-limits for training**:
+Official WildFake demonstration subset:
 
-| Split    | Source            | Count |
+| Split | Source | Count |
 |----------|-------------------|------:|
-| Non-AIGC | COCO val2017      |  4998 |
-| AIGC     | DALL·E Advanced   |  8843 |
+| Authentic | COCO val2017 | 4998 |
+| AI-generated | DALL-E Advanced | 8843 |
 
-Use it only when you need a public demo number. Put it under `data/wildfake_holdout/` if you download it, and never list that path as `train_dir`.
+Eval only. Never set this as `train_dir`. Use `configs/holdout.yaml` and the frozen SID_Set threshold. The Hugging Face pack `techjam-aigc/wildfake-eval-subset` is org-private.
 
-## Bootstrap placeholders
+## Samples
 
 ```
 python scripts/prepare_data.py --samples
 ```
 
-Writes four tiny PNGs under `data/samples/` so `predict.py` and pytest work before any dataset download.
+Four tiny PNGs under `data/samples/` so pytest and `predict.py` run before any dataset download. They are not a training set.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Callable
 
@@ -46,6 +47,8 @@ class FolderDataset(Dataset):
         train: bool = False,
         official_aug_prob: float = 0.0,
         two_view: bool = False,
+        max_samples: int | None = None,
+        seed: int = 42,
         transform: Callable | None = None,
     ) -> None:
         self.paths = discover_images(root)
@@ -64,6 +67,7 @@ class FolderDataset(Dataset):
             raise ValueError(
                 f"{len(missing)} images have no REAL/FAKE parent folder. Example: {preview}"
             )
+        self.paths, self.labels = _balanced_subset(self.paths, self.labels, max_samples, seed)
         self.train = train
         self.image_size = image_size
         self.two_view = two_view
@@ -107,3 +111,26 @@ class ImageListDataset(Dataset):
         image = open_rgb(path)
         tensor = self.transform(image) if self.transform else pil_to_tensor(image, self.image_size)
         return {"image": tensor, "path": path.as_posix()}
+
+
+def _balanced_subset(
+    paths: list[Path],
+    labels: list[int],
+    max_samples: int | None,
+    seed: int,
+) -> tuple[list[Path], list[int]]:
+    if max_samples is None or max_samples >= len(paths):
+        return paths, labels
+    rng = random.Random(seed)
+    buckets: dict[int, list[Path]] = {0: [], 1: []}
+    for path, label in zip(paths, labels, strict=True):
+        buckets.setdefault(label, []).append(path)
+    per_class = max(1, max_samples // max(len(buckets), 1))
+    out_paths: list[Path] = []
+    out_labels: list[int] = []
+    for label, pool in buckets.items():
+        rng.shuffle(pool)
+        taken = pool[:per_class]
+        out_paths.extend(taken)
+        out_labels.extend([label] * len(taken))
+    return out_paths, out_labels

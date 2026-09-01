@@ -1,11 +1,14 @@
-"""Lightweight Grad-CAM over the spatial encoder.
+"""Lightweight Grad-CAM for the demo overlay.
 
-Enough for the error-analysis note and the demo overlay. Not a research CAM
-library — keep it dependency-free so the team can run it on CPU.
+CNN spatial backbones use the last Conv2d. CLIP is a frozen ViT that normally
+runs under no_grad, so classic conv CAM never sees a backward — that is the
+demo IndexError. For CLIP we enable grad for one forward and CAM the last
+transformer block's patch tokens.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -24,9 +27,49 @@ def _last_conv(module: torch.nn.Module) -> torch.nn.Module:
     return last
 
 
-def gradcam(model, image: torch.Tensor) -> np.ndarray:
-    """image: [1,3,H,W] on the model device. Returns [H,W] heatmap in [0,1]."""
-    model.eval()
+def _vit_last_block(module: torch.nn.Module) -> torch.nn.Module | None:
+    blocks = getattr(module, "blocks", None)
+    if blocks is None:
+        backbone = getattr(module, "backbone", None)
+        blocks = getattr(backbone, "blocks", None)
+    if blocks is None or len(blocks) == 0:
+        return None
+    return blocks[-1]
+
+
+def _to_heatmap(cam: torch.Tensor, size: tuple[int, int]) -> np.ndarray:
+    cam = F.interpolate(cam, size=size, mode="bilinear", align_corners=False)
+    cam = cam.squeeze().detach().cpu().numpy()
+    cam = cam - cam.min()
+    return cam / (cam.max() + 1e-8)
+
+
+def _tokens_to_map(tokens: torch.Tensor) -> torch.Tensor:
+    """[B, N, C] or [B, N] → [B, 1, H, W], dropping the CLS token when needed."""
+    if tokens.ndim == 3:
+        tokens = tokens[:, 1:] if tokens.shape[1] > 1 else tokens
+        n = tokens.shape[1]
+        side = int(math.sqrt(n))
+        if side * side != n:
+            tokens = tokens[:, : side * side] if side > 0 else tokens
+            n = tokens.shape[1]
+            side = int(math.sqrt(n))
+        return tokens.transpose(1, 2).reshape(tokens.shape[0], tokens.shape[2], side, side)
+    tokens = tokens[:, 1:] if tokens.shape[1] > 1 else tokens
+    n = tokens.shape[1]
+    side = int(math.sqrt(n))
+    return tokens[:, : side * side].reshape(tokens.shape[0], 1, side, side)
+
+
+def _run_backward(model, image: torch.Tensor) -> None:
+    model.zero_grad(set_to_none=True)
+    logit = model(image)
+    if isinstance(logit, tuple):
+        logit = logit[0]
+    logit.reshape(-1).sum().backward()
+
+
+def _conv_gradcam(model, image: torch.Tensor) -> np.ndarray:
     target = _last_conv(model.spatial)
     activations: list[torch.Tensor] = []
     gradients: list[torch.Tensor] = []
@@ -35,25 +78,88 @@ def gradcam(model, image: torch.Tensor) -> np.ndarray:
         activations.append(out)
 
     def bwd_hook(_mod, _gin, gout) -> None:
-        gradients.append(gout[0])
+        if gout and gout[0] is not None:
+            gradients.append(gout[0])
 
-    handles = [target.register_forward_hook(fwd_hook), target.register_full_backward_hook(bwd_hook)]
+    handles = [
+        target.register_forward_hook(fwd_hook),
+        target.register_full_backward_hook(bwd_hook),
+    ]
     try:
-        model.zero_grad(set_to_none=True)
-        logit = model(image)
-        logit.sum().backward()
-        act = activations[0]
-        grad = gradients[0]
+        _run_backward(model, image)
+        if not activations or not gradients:
+            return _input_saliency(model, image)
+        act, grad = activations[0], gradients[0]
         weights = grad.mean(dim=(2, 3), keepdim=True)
         cam = torch.relu((weights * act).sum(dim=1, keepdim=True))
-        cam = F.interpolate(cam, size=image.shape[-2:], mode="bilinear", align_corners=False)
-        cam = cam.squeeze().detach().cpu().numpy()
-        cam = cam - cam.min()
-        cam = cam / (cam.max() + 1e-8)
-        return cam
+        return _to_heatmap(cam, image.shape[-2:])
     finally:
         for handle in handles:
             handle.remove()
+
+
+def _vit_gradcam(model, image: torch.Tensor) -> np.ndarray:
+    target = _vit_last_block(model.spatial)
+    if target is None:
+        return _input_saliency(model, image)
+    activations: list[torch.Tensor] = []
+    gradients: list[torch.Tensor] = []
+
+    def fwd_hook(_mod, _inp, out) -> None:
+        activations.append(out[0] if isinstance(out, tuple) else out)
+
+    def bwd_hook(_mod, _gin, gout) -> None:
+        if gout and gout[0] is not None:
+            gradients.append(gout[0])
+
+    spatial = model.spatial
+    prev = getattr(spatial, "_backbone_grad", False)
+    spatial._backbone_grad = True
+    handles = [
+        target.register_forward_hook(fwd_hook),
+        target.register_full_backward_hook(bwd_hook),
+    ]
+    try:
+        _run_backward(model, image)
+        if not activations or not gradients:
+            return _input_saliency(model, image)
+        act_map = _tokens_to_map(activations[0])
+        grad_map = _tokens_to_map(gradients[0])
+        weights = grad_map.mean(dim=(2, 3), keepdim=True)
+        cam = torch.relu((weights * act_map).sum(dim=1, keepdim=True))
+        return _to_heatmap(cam, image.shape[-2:])
+    finally:
+        spatial._backbone_grad = prev
+        for handle in handles:
+            handle.remove()
+
+
+def _input_saliency(model, image: torch.Tensor) -> np.ndarray:
+    """Last-resort map if a stream is detached. Still better than crashing the demo."""
+    model.zero_grad(set_to_none=True)
+    if not image.requires_grad:
+        image = image.detach().requires_grad_(True)
+    logit = model(image)
+    if isinstance(logit, tuple):
+        logit = logit[0]
+    logit.reshape(-1).sum().backward()
+    if image.grad is None:
+        return np.zeros(image.shape[-2:], dtype=np.float32)
+    sal = image.grad.detach().abs().mean(dim=1, keepdim=True)
+    return _to_heatmap(sal, image.shape[-2:])
+
+
+def gradcam(model, image: torch.Tensor) -> np.ndarray:
+    """image: [1,3,H,W] on the model device. Returns [H,W] heatmap in [0,1]."""
+    try:
+        model.eval()
+        image = image.detach().requires_grad_(True)
+        if _vit_last_block(model.spatial) is not None:
+            return _vit_gradcam(model, image)
+        return _conv_gradcam(model, image)
+    except Exception:
+        h, w = int(image.shape[-2]), int(image.shape[-1])
+        return np.zeros((h, w), dtype=np.float32)
 
 
 def overlay_heatmap(pil_image: Image.Image, heatmap: np.ndarray, alpha: float = 0.45) -> Image.Image:
@@ -74,10 +180,10 @@ def gate_story(gate: torch.Tensor | Any) -> str:
         values = list(gate)
     spatial, forensic = float(values[0]), float(values[1])
     if forensic > spatial:
-        lead = "forensic residual / frequency cues"
+        lead = "compression and frequency traces"
     else:
-        lead = "spatial / semantic texture"
+        lead = "how the picture looks"
     return (
-        f"Trust gate: spatial={spatial:.2f}, forensic={forensic:.2f}. "
-        f"This decision leaned on {lead}."
+        f"Appearance weight {spatial:.2f}, trace weight {forensic:.2f}. "
+        f"This call mostly used {lead}."
     )

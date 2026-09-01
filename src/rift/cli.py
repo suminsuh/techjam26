@@ -46,12 +46,27 @@ def eval_main(argv: list[str] | None = None) -> None:
     _add_shared(parser)
     parser.add_argument("--data_dir", default=None, help="Labeled ImageFolder to evaluate")
     parser.add_argument("--output_dir", default=None)
+    parser.add_argument(
+        "--threshold",
+        default=None,
+        type=float,
+        help="Reuse a frozen operating point (required for holdout). Do not fit on holdout.",
+    )
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
+    if args.threshold is not None:
+        cfg.setdefault("eval", {})["frozen_threshold"] = args.threshold
     summary = evaluate_robustness(cfg, data_dir=args.data_dir, checkpoint=args.checkpoint, output_dir=args.output_dir)
-    print(f"threshold={summary['threshold']:.4f} (frozen from clean val)")
+    src = summary.get("threshold_source", "clean_val")
+    print(f"threshold={summary['threshold']:.4f} (source={src}, target FPR={summary.get('target_fpr', 0.05)})")
     for row in summary["table"]:
-        print(f"  {row['condition']:16s} acc={row['accuracy']:.3f} auroc={row['auroc']:.3f} fpr={row['fpr']:.3f}")
+        bacc = row.get("balanced_acc", (row["recall"] + row["specificity"]) / 2)
+        print(
+            f"  {row['condition']:16s} acc={row['accuracy']:.3f} bacc={bacc:.3f} "
+            f"prec={row['precision']:.3f} rec={row['recall']:.3f} spec={row['specificity']:.3f} "
+            f"fpr={row['fpr']:.3f} fnr={row['fnr']:.3f} auroc={row['auroc']:.3f} "
+            f"gate={row['mean_gate_spatial']:.2f}/{row['mean_gate_forensic']:.2f}"
+        )
     dest = Path(args.output_dir or cfg.get("eval", {}).get("output_dir", "outputs"))
     print(f"wrote {dest / 'robustness_table.md'}")
 

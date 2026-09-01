@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rift"
 version = "0.1.0"
-description = "RIFT: Robust Image Forgery Tracer for AIGC detection under real-world transforms"
+description = "RIFT: AI-generated image detector under official re-share transforms"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "TikTok TechJam 2026 Team" }]
@@ -23,6 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+data = ["datasets>=2.18.0", "huggingface_hub>=0.23.0", "pyarrow>=15.0.0"]
 demo = ["gradio>=4.44"]
 dev = ["pytest>=8.0"]
 

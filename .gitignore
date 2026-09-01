@@ -20,6 +20,7 @@ checkpoints/
 *.onnx
 wandb/
 .cache/
+.huggingface/
 
 # Notebooks / OS / IDE
 .pytest_cache/

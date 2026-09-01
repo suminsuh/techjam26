@@ -3,7 +3,7 @@
 Usage:
     python scripts/predict.py --input_dir path/to/images --output predictions.json
 
-Output JSON is a list of {image_path, pred} where pred is P(AIGC).
+Output JSON is a list of {image_path, pred} where pred is P(AI-generated).
 """
 
 from __future__ import annotations

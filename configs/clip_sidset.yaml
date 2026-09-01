@@ -1,0 +1,67 @@
+# Submitted SID_Set run: frozen CLIP-B/32 + forensic CNN.
+# Reported checkpoint used 20k train images (10k real + 10k full_synthetic).
+# CLIP stays frozen. yaml cache caps (40k/5k) are for a larger run that did not finish.
+seed: 42
+image_size: 224
+device: auto
+
+model:
+  spatial_backbone: clip_vit_b32
+  pretrained: true
+  embed_dim: 256
+  dropout: 0.2
+
+train:
+  epochs: 4
+  patience: 2
+  min_delta: 0.002
+  batch_size: 16
+  lr: 1.0e-4
+  weight_decay: 0.05
+  num_workers: 0
+  official_aug_prob: 0.75
+  consistency_weight: 0.4
+  forensic_aux_weight: 0.35
+  gate_entropy_weight: 0.03
+  amp: true
+  max_samples: null
+  max_val_samples: null
+  save_dir: checkpoints/sidset
+
+data:
+  source: sid_set
+  cache_dir: data/sidset
+  train_per_class: 40000
+  val_per_class: 5000
+  cache_max_side: 512
+  train_dir: data/sidset/train
+  val_dir: data/sidset/val
+  holdout_dir: data/wildfake_holdout
+
+eval:
+  threshold_source: clean_val
+  target_fpr: 0.05
+  batch_size: 16
+  max_samples: 4000
+  output_dir: outputs/sidset
+  conditions:
+    - clean
+    - jpeg_90
+    - jpeg_70
+    - jpeg_50
+    - jpeg_30
+    - blur_0.5
+    - blur_1.0
+    - blur_2.0
+    - resize_0.5
+    - resize_0.25
+    - noise_0.02
+    - noise_0.05
+    - noise_0.10
+    - color_jitter
+    - center_crop_0.8
+
+predict:
+  batch_size: 16
+  tta: false
+  checkpoint: checkpoints/sidset/best.pt
