@@ -1,0 +1,50 @@
+# Official WildFake demonstration holdout. Eval only — never train.
+# COCO val2017 (4998 real) + DALL-E Advanced (8843 AIGC).
+# Threshold is the SID_Set 20k 5% FPR point. Do not refit on holdout.
+# `default` is 36/64 real/fake and every COCO real is 200x200 — report
+# AUROC / FPR / FNR / balanced acc, not raw accuracy. `laion_matched`
+# is the honest size-controlled number (same images, both >=1024).
+seed: 42
+image_size: 224
+device: auto
+
+model:
+  spatial_backbone: clip_vit_b32
+  pretrained: true
+  embed_dim: 256
+  dropout: 0.2
+
+data:
+  source: wildfake_holdout
+  holdout_config: default
+  holdout_dir: data/wildfake_holdout
+
+eval:
+  frozen_threshold: 0.031700171530246735
+  threshold_source: frozen
+  target_fpr: 0.05
+  batch_size: 16
+  max_samples: null
+  robustness_samples: 2000
+  output_dir: outputs/holdout
+  conditions:
+    - clean
+    - jpeg_90
+    - jpeg_70
+    - jpeg_50
+    - jpeg_30
+    - blur_0.5
+    - blur_1.0
+    - blur_2.0
+    - resize_0.5
+    - resize_0.25
+    - noise_0.02
+    - noise_0.05
+    - noise_0.10
+    - color_jitter
+    - center_crop_0.8
+
+predict:
+  batch_size: 16
+  tta: false
+  checkpoint: checkpoints/sidset/best_20k.pt

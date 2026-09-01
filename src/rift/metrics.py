@@ -16,17 +16,25 @@ from sklearn.metrics import (
 class BinaryReport:
     threshold: float
     accuracy: float
+    precision: float
+    recall: float
+    specificity: float
     f1: float
     auroc: float
     ap: float
     fpr: float
     fnr: float
+    balanced_acc: float
     n: int
 
     def as_dict(self) -> dict[str, float | int]:
         return {
             "threshold": round(self.threshold, 4),
             "accuracy": round(self.accuracy, 4),
+            "balanced_acc": round(self.balanced_acc, 4),
+            "precision": round(self.precision, 4),
+            "recall": round(self.recall, 4),
+            "specificity": round(self.specificity, 4),
             "f1": round(self.f1, 4),
             "auroc": round(self.auroc, 4),
             "ap": round(self.ap, 4),
@@ -78,13 +86,20 @@ def evaluate_scores(y_true: np.ndarray, y_score: np.ndarray, threshold: float) -
     tp = int(np.sum((y_hat == 1) & (y_true == 1)))
     fpr = fp / max(fp + tn, 1)
     fnr = fn / max(fn + tp, 1)
+    precision = tp / max(tp + fp, 1)
+    recall = tp / max(tp + fn, 1)
+    specificity = tn / max(tn + fp, 1)
     return BinaryReport(
         threshold=float(threshold),
         accuracy=float(accuracy_score(y_true, y_hat)),
+        precision=float(precision),
+        recall=float(recall),
+        specificity=float(specificity),
         f1=float(f1_score(y_true, y_hat, zero_division=0)),
         auroc=safe_auroc(y_true, y_score),
         ap=safe_ap(y_true, y_score),
         fpr=float(fpr),
         fnr=float(fnr),
+        balanced_acc=float((recall + specificity) / 2.0),
         n=int(len(y_true)),
     )

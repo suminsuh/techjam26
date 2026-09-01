@@ -23,7 +23,12 @@ def load_checkpoint(path: str | Path | None, cfg: dict[str, Any], device: torch.
     if resolved and resolved.exists():
         payload = torch.load(resolved, map_location=device, weights_only=False)
         state = payload["model"] if isinstance(payload, dict) and "model" in payload else payload
-        model.load_state_dict(state)
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if missing or unexpected:
+            warnings.warn(
+                f"Checkpoint mismatch missing={list(missing)} unexpected={list(unexpected)}",
+                stacklevel=2,
+            )
     else:
         location = str(resolved) if resolved else "(none)"
         warnings.warn(
