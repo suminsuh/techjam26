@@ -33,6 +33,7 @@ class ClipSpatialEncoder(nn.Module):
             param.requires_grad = False
         feat_dim = int(self.backbone.num_features)
         self.proj = nn.Identity() if feat_dim == embed_dim else nn.Linear(feat_dim, embed_dim)
+        self._backbone_grad = False
 
     def train(self, mode: bool = True):
         super().train(mode)
@@ -40,6 +41,9 @@ class ClipSpatialEncoder(nn.Module):
         return self
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
+        if self._backbone_grad:
             feats = self.backbone(x)
+        else:
+            with torch.no_grad():
+                feats = self.backbone(x)
         return self.proj(feats.float())

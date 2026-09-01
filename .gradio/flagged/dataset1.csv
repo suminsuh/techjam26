@@ -1,0 +1,6 @@
+Upload an image,Show where the model looked,Result,Where the model looked,"Same image after JPEG, blur, crop, and noise",timestamp
+.gradio\flagged\Upload an image\fc6365d74af0839c660a\photo_5_2026-09-01_09-31-51.jpg,true,"## **Likely AI-generated**
+
+Score **0.981** (0 = authentic, 1 = AI-generated). Cutoff **0.032**, kept the same for every transform.
+
+Appearance weight 1.00, trace weight 0.00. This call mostly used how the picture looks.",.gradio\flagged\Where the model looked\e512f7f218f0ca717d50\image.webp,"{""headers"": [""transform"", ""score"", ""verdict"", ""appearance"", ""traces""], ""data"": [[""Original"", 0.981, ""Likely AI-generated"", 1, 0], [""JPEG 70"", 0.977, ""Likely AI-generated"", 1, 0], [""JPEG 30"", 0.797, ""Likely AI-generated"", 1, 0], [""Blur"", 0.968, ""Likely AI-generated"", 1, 0], [""Thumbnail"", 0.959, ""Likely AI-generated"", 1, 0], [""Noise"", 0.987, ""Likely AI-generated"", 1, 0], [""Color shift"", 0.973, ""Likely AI-generated"", 1, 0], [""Center crop"", 0.739, ""Likely AI-generated"", 1, 0]], ""metadata"": null}",2026-09-01 09:50:25.122437

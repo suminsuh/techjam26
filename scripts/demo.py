@@ -30,15 +30,35 @@ def _tensorize(image: Image.Image, size: int) -> torch.Tensor:
 
 
 def _load_threshold(default: float = 0.5) -> float:
-    metrics = ROOT / "outputs" / "metrics.json"
-    if not metrics.exists():
-        return default
-    try:
-        import json
+    import json
 
-        return float(json.loads(metrics.read_text(encoding="utf-8"))["threshold"])
-    except (KeyError, TypeError, ValueError):
-        return default
+    for metrics in (
+        ROOT / "outputs" / "sidset" / "metrics.json",
+        ROOT / "outputs" / "metrics.json",
+    ):
+        if not metrics.exists():
+            continue
+        try:
+            return float(json.loads(metrics.read_text(encoding="utf-8"))["threshold"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return default
+
+
+def _verdict(pred: float, threshold: float) -> str:
+    return "Likely AI-generated" if pred >= threshold else "Likely authentic"
+
+
+TRANSFORM_LABELS = {
+    "clean": "Original",
+    "jpeg_70": "JPEG 70",
+    "jpeg_30": "JPEG 30",
+    "blur_1.0": "Blur",
+    "resize_0.25": "Thumbnail",
+    "noise_0.05": "Noise",
+    "color_jitter": "Color shift",
+    "center_crop_0.8": "Center crop",
+}
 
 
 def run_demo(config: str, checkpoint: str | None, share: bool) -> None:
@@ -66,16 +86,20 @@ def run_demo(config: str, checkpoint: str | None, share: bool) -> None:
             return "Upload an image first.", None, []
         pil = to_rgb(Image.fromarray(image.astype(np.uint8)))
         pred, gate = _score(pil)
-        label = "AIGC-likely" if pred >= threshold else "Authentic-likely"
+        label = _verdict(pred, threshold)
         story = (
-            f"**{label}**  ·  P(AIGC) = `{pred:.3f}`  ·  threshold = `{threshold:.3f}` "
-            "(frozen from `outputs/metrics.json` if present)\n\n"
+            f"## **{label}**\n\n"
+            f"Score **{pred:.3f}** (0 = authentic, 1 = AI-generated). "
+            f"Cutoff **{threshold:.3f}**, kept the same for every transform.\n\n"
             f"{gate_story(gate)}"
         )
         cam_img = None
         if show_cam:
-            heatmap = gradcam(model, _tensorize(pil, size).to(device))
-            cam_img = overlay_heatmap(pil.resize((size, size)), heatmap)
+            try:
+                heatmap = gradcam(model, _tensorize(pil, size).to(device))
+                cam_img = overlay_heatmap(pil.resize((size, size)), heatmap)
+            except Exception:
+                cam_img = None
 
         rows = []
         for name in [
@@ -92,33 +116,33 @@ def run_demo(config: str, checkpoint: str | None, share: bool) -> None:
             t_pred, t_gate = _score(transformed)
             rows.append(
                 [
-                    name,
+                    TRANSFORM_LABELS.get(name, name),
                     round(t_pred, 3),
-                    "AIGC" if t_pred >= threshold else "real",
+                    _verdict(t_pred, threshold),
                     round(float(t_gate[0]), 2),
                     round(float(t_gate[1]), 2),
                 ]
             )
         return story, cam_img, rows
 
-    table_headers = ["condition", "pred", "call", "gate_spatial", "gate_forensic"]
+    table_headers = ["transform", "score", "verdict", "appearance", "traces"]
     demo = gr.Interface(
         fn=analyze,
         inputs=[
-            gr.Image(type="numpy", label="Image"),
-            gr.Checkbox(label="Show Grad-CAM overlay", value=True),
+            gr.Image(type="numpy", label="Upload an image"),
+            gr.Checkbox(label="Show where the model looked", value=True),
         ],
         outputs=[
-            gr.Markdown(label="Decision"),
-            gr.Image(type="pil", label="Spatial-stream Grad-CAM"),
-            gr.Dataframe(headers=table_headers, label="Fixed-threshold robustness probe"),
+            gr.Markdown(label="Result"),
+            gr.Image(type="pil", label="Where the model looked"),
+            gr.Dataframe(headers=table_headers, label="Same image after JPEG, blur, crop, and noise"),
         ],
-        title="RIFT — Robust Image Forgery Tracer",
+        title="RIFT: is this photo AI-generated?",
         description=(
-            "Dual-stream AIGC detector for TikTok TechJam 2026 Track 5. "
-            "The table applies the official redistribution transforms to *this* "
-            "upload and scores them with the same model. Untrained checkpoints "
-            "will look random — train first, then re-open the demo."
+            "Upload a picture. RIFT scores it, then applies the official "
+            "re-share transforms (JPEG, blur, thumbnail, noise, crop) with "
+            "the same cutoff. Train a checkpoint first or the scores will "
+            "look random."
         ),
     )
     demo.launch(share=share)
