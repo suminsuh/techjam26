@@ -34,10 +34,6 @@ def main() -> None:
 
     print("loading dragonintelligence/CIFAKE-image-dataset ...")
     bundle = load_dataset("dragonintelligence/CIFAKE-image-dataset")
-    names = {int(k): v for k, v in bundle["train"].features["label"]._int2str.items()} if hasattr(
-        bundle["train"].features["label"], "_int2str"
-    ) else {0: "FAKE", 1: "REAL"}
-    # features.class_label.names is the reliable API
     raw_names = bundle["train"].features["label"].names
     names = {i: str(n).upper() for i, n in enumerate(raw_names)}
     print("label map", names)

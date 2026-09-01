@@ -1,7 +1,6 @@
-# Frozen CLIP-B/32 + forensic aux on SID_Set real vs full_synthetic.
-# More images (not more epochs on 20k): CLIP already saturated; forensic
-# needs volume. Aux BCE + gate entropy keep SRM/FFT alive under JPEG/blur.
-# CLIP stays frozen. Stop on clean val accuracy at 5% FPR, not raw AUROC.
+# Submitted SID_Set run: frozen CLIP-B/32 + forensic CNN.
+# Reported checkpoint used 20k train images (10k real + 10k full_synthetic).
+# CLIP stays frozen. yaml cache caps (40k/5k) are for a larger run that did not finish.
 seed: 42
 image_size: 224
 device: auto

@@ -1,4 +1,5 @@
-# RIFT default config. Swap backbones and data roots here, not in code.
+# Tiny CNN smoke-test config (ImageFolder REAL/FAKE).
+# Submitted detector: configs/clip_sidset.yaml + CLIP ViT-B/32.
 seed: 42
 image_size: 224
 device: auto  # auto | cpu | cuda

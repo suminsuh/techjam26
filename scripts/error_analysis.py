@@ -12,9 +12,9 @@ from rift.engine.errors import error_note_from_eval  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Write the error-analysis note from an eval run.")
-    parser.add_argument("--metrics", default="outputs/metrics.json")
-    parser.add_argument("--preds", default="outputs/predictions_by_condition.json")
-    parser.add_argument("--output", default="outputs/error_analysis.md")
+    parser.add_argument("--metrics", default="outputs/sidset/metrics.json")
+    parser.add_argument("--preds", default="outputs/sidset/predictions_by_condition.json")
+    parser.add_argument("--output", default="outputs/sidset/error_analysis.md")
     args = parser.parse_args()
     dest = error_note_from_eval(args.metrics, args.preds, args.output)
     print(f"wrote {dest}")

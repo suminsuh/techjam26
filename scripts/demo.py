@@ -150,7 +150,7 @@ def run_demo(config: str, checkpoint: str | None, share: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/default.yaml")
+    parser.add_argument("--config", default="configs/clip_sidset.yaml")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()

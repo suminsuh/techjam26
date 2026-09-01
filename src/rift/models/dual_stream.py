@@ -5,11 +5,12 @@ Why two streams
 Frequency / residual CNNs are accurate on clean images and then fall apart
 after JPEG and blur (forensic cues get quantized away). Semantic backbones
 degrade more slowly because they look at texture regularity and structure.
-A learned gate lets the model *say* which evidence it used — useful in the
+A learned gate reports which evidence it used. That is useful in the
 demo and in error analysis.
 
-Parameter budget stays far under the <2B rule: tiny ≈ 0.4M, EfficientNet-B0
-≈ 5M + forensic head, ConvNeXt-Tiny ≈ 28M + forensic head.
+Parameter budget stays far under the <2B rule. Submitted CLIP-B/32 hybrid
+is ~88M total with ~0.85M trainable. tiny ≈ 0.4M; EfficientNet-B0 ≈ 5M;
+ConvNeXt-Tiny ≈ 28M plus the forensic head.
 """
 
 from __future__ import annotations

@@ -29,11 +29,10 @@ def write_error_note(
         "",
         f"Operating threshold (frozen from clean val): `{threshold:.4f}`",
         "",
-        "## False positives (authentic flagged as AIGC)",
+        "## False positives (authentic flagged as AI-generated)",
         "",
-        "These are the highest-confidence accusations. Typical causes: heavy",
-        "compression already present in the 'real' file, overly smooth texture,",
-        "or screenshots that look like generated images.",
+        "Highest-confidence accusations. Common cases: already-compressed",
+        "camera photos, screenshots, or unusually smooth texture.",
         "",
     ]
     for idx in fp:
@@ -43,15 +42,14 @@ def write_error_note(
 
     lines += [
         "",
-        "## False negatives (AIGC missed)",
+        "## False negatives (AI-generated images missed)",
         "",
-        "These are the lowest-confidence misses. Typical causes: JPEG 30–50,",
-        "strong blur, or generators whose artifacts look like camera noise.",
-        "After redistribution, the model often becomes conservative (predicts real).",
+        "Lowest-confidence misses. After heavy JPEG or blur the score can",
+        "fall below a low-FPR cutoff even when ranking is still strong.",
         "",
     ]
     for idx in fn:
-        lines.append(f"- `{paths[idx]}`  pred={s[idx]:.3f}  label=aigc")
+        lines.append(f"- `{paths[idx]}`  pred={s[idx]:.3f}  label=ai-generated")
     if len(fn) == 0:
         lines.append("- none in this split")
 
@@ -59,11 +57,12 @@ def write_error_note(
         "",
         "## Trade-offs to discuss in the write-up",
         "",
-        "- Forensic cues win on clean images and lose under JPEG / blur.",
-        "- The spatial stream is more stable but weaker on unseen generators.",
-        "- A low-FPR threshold (default 5%) protects creators and will miss",
-        "  some fakes. Raise it only if the product priority flips.",
-        "- Do not retune the threshold per transform when quoting robustness.",
+        "- A low-FPR cutoff (default 5%) protects authentic images and will miss",
+        "  some generated ones. Do not retune it per transform.",
+        "- On the submitted CLIP checkpoint the gate often sits on the spatial",
+        "  stream. Do not claim a forensic switch unless the gate columns move.",
+        "- SID_Set val is the same generator family as training. Report holdout",
+        "  separately with this frozen threshold.",
         "",
     ]
     dest = Path(output_path)
